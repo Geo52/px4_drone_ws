@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from px4_msgs.msg import OffboardControlMode, VehicleCommand
+from px4_msgs.msg import OffboardControlMode, VehicleCommand, TrajectorySetpoint
 
 
 class Takeoff(Node):
@@ -17,11 +17,16 @@ class Takeoff(Node):
             VehicleCommand, "/fmu/in/vehicle_command", 1
         )
 
+        self.trajectory_setpoint_publisher = self.create_publisher(
+            TrajectorySetpoint, "/fmu/in/trajectory_setpoint", 1
+        )
+
         self.counter = 0
         self.timer = self.create_timer(0.1, self.timer_callback)
 
     def timer_callback(self):
         self.publish_offboard_control_heartbeat_signal()
+        self.publish_position_setpoint()
         if self.counter == 10:
             self.engage_offboard_mode()
             self.arm()
@@ -43,6 +48,13 @@ class Takeoff(Node):
         self.publish_vehicle_command(
             VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, param1=1.0
         )
+
+    def publish_position_setpoint(self):
+        msg = TrajectorySetpoint()
+        msg.position = [0.0, 0.0, -20.0]
+        msg.yaw = 1.57079  # (90 degree)
+        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        self.trajectory_setpoint_publisher.publish(msg)
 
     def publish_vehicle_command(self, command, **params) -> None:
         """Publish a vehicle command."""

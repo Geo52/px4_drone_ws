@@ -155,16 +155,12 @@ class Takeoff(Node):
             VehicleCommand, "/fmu/in/vehicle_command", 1
         )
 
-        self.counter = 0 # NEW
         self.timer = self.create_timer(0.1, self.timer_callback)
 
     def timer_callback(self):
         self.publish_offboard_control_heartbeat_signal()
 
-        if self.counter == 10:
-            self.engage_offboard_mode() # NEW
-        if self.counter < 11:
-            self.counter += 1
+        self.engage_offboard_mode() # NEW
 
     def publish_offboard_control_heartbeat_signal(self):
         msg = OffboardControlMode()
@@ -191,12 +187,76 @@ def main():
     rclpy.spin(takeoff)
     takeoff.destroy_node()
 ```
+`VehicleCommand` is used to send mavlink commands therefore we specify what mavlink command to do. We do this by using an enum. In this case we used `VEHICLE_CMD_DO_SET_MODE` which corresponds to 176. You can also look for `VEHICLE_CMD_COMPONENT_ARM_DISARM` which is mavlink command 400. Thats how you know what to set the params too.
 
-We use a counter as to not send a mode switch commound every 10 hz. Thats unneccsary.
+The `msg.command` field corresponds to a mavlink command. In this case `MAV_CMD_DO_SET_MODE`. If we look at the specification for this command we find that param1
 
-Verify that it worked by check qgc and seeing that the mode is now offboard.
+Notice that OffboardControlMode and later TrajectorySetpoint do not have corresponding mavlink commands.
+
+>[mavlink commands](https://mavlink.io/en/messages/common.html)
 
 > [learn more about VehicleCommand](https://docs.px4.io/main/en/msg_docs/VehicleCommand)
+
+
+We can use a counter as to not send a mode switch commound every 10 hz. Thats unneccsary.
+```py
+import rclpy
+from rclpy.node import Node
+from px4_msgs.msg import OffboardControlMode, VehicleCommand 
+
+
+class Takeoff(Node):
+    """Node that tells the drone to takeoff to x meters, and land after its reached x meters"""
+
+    def __init__(self):
+        super().__init__("takeoff") 
+
+        self.offboard_control_mode_publisher = self.create_publisher(
+            OffboardControlMode, "/fmu/in/offboard_control_mode", 1
+        )
+
+        self.vehicle_command_publisher = self.create_publisher( 
+            VehicleCommand, "/fmu/in/vehicle_command", 1
+        )
+
+        self.counter = 0 # NEW
+        self.timer = self.create_timer(0.1, self.timer_callback)
+
+    def timer_callback(self):
+        self.publish_offboard_control_heartbeat_signal()
+
+        if self.counter == 10: # NEW
+            self.engage_offboard_mode() 
+        if self.counter < 11:
+            self.counter += 1
+
+    def publish_offboard_control_heartbeat_signal(self):
+        msg = OffboardControlMode()
+        msg.position = True
+        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        self.offboard_control_mode_publisher.publish(msg)       
+
+    def engage_offboard_mode(self):
+        msg = VehicleCommand()
+        msg.command = VehicleCommand.VEHICLE_CMD_DO_SET_MODE
+        msg.param1 = 1.0
+        msg.param2 = 6.0
+        msg.target_system = 1
+        msg.target_component = 1
+        msg.source_system = 1
+        msg.source_component = 1
+        msg.from_external = True
+        msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        self.vehicle_command_publisher.publish(msg)
+
+def main():
+    rclpy.init()
+    takeoff = Takeoff()
+    rclpy.spin(takeoff)
+    takeoff.destroy_node()
+```
+Verify that it worked by check qgc and seeing that the mode is now offboard.
+
 
 
 ## step 3: arm
@@ -361,4 +421,4 @@ def main():
 
 Thats better.
 ## step 4: takeoff
-Now where getting to the good stuff.
+Now our drone is ready for take off, but first we have to tell it where to go.

@@ -1,6 +1,12 @@
 import rclpy
 from rclpy.node import Node
-from px4_msgs.msg import OffboardControlMode, VehicleCommand, TrajectorySetpoint
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
+from px4_msgs.msg import (
+    OffboardControlMode,
+    VehicleCommand,
+    TrajectorySetpoint,
+    VehicleLocalPosition,
+)
 
 
 class Takeoff(Node):
@@ -8,6 +14,13 @@ class Takeoff(Node):
 
     def __init__(self):
         super().__init__("takeoff")
+
+        qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
 
         self.offboard_control_mode_publisher = self.create_publisher(
             OffboardControlMode, "/fmu/in/offboard_control_mode", 1
@@ -21,12 +34,25 @@ class Takeoff(Node):
             TrajectorySetpoint, "/fmu/in/trajectory_setpoint", 1
         )
 
+        self.vehicle_local_position_subscriber = self.create_subscription(
+            VehicleLocalPosition,
+            "/fmu/out/vehicle_local_position_v1",
+            self.vehicle_local_position_callback,
+            qos,  # change this to qos if i run into problems
+        )
+
         self.counter = 0
+        self.current_altitude = 0.0
         self.timer = self.create_timer(0.1, self.timer_callback)
+
+    def vehicle_local_position_callback(self, msg):
+        self.current_altitude = msg.z
+        self.get_logger().info(f"Altitude: {-msg.z:.2f}m")
 
     def timer_callback(self):
         self.publish_offboard_control_heartbeat_signal()
         self.publish_position_setpoint()
+
         if self.counter == 10:
             self.engage_offboard_mode()
             self.arm()
@@ -51,7 +77,7 @@ class Takeoff(Node):
 
     def publish_position_setpoint(self):
         msg = TrajectorySetpoint()
-        msg.position = [0.0, 0.0, -20.0]
+        msg.position = [0.0, 0.0, -5.0]
         msg.yaw = 1.57079  # (90 degree)
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.trajectory_setpoint_publisher.publish(msg)
